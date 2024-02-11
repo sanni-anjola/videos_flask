@@ -7,9 +7,9 @@ app = Flask(__name__)
 
 client = MongoClient('localhost', 27017)
 
-db = client.videos
-movies = db.movies
-users = db.users
+db = client.videos # db
+movies = db.movies # movie collection
+users = db.users    # user collection
 
 app = Flask(__name__)
 

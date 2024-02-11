@@ -1,17 +1,22 @@
 from bson import ObjectId
-from flask import Blueprint, jsonify, request
+from flask import jsonify, request
+
+from app.auth.roles_required import roles_required
+from app.auth.models import UserRole
 from .models import Movie
-from app import movies
-from flask_jwt_extended import jwt_required
+from app import movies, users
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 
-def home():
-    return  "Hello", 200
-
-    
+@jwt_required()
 def get_one_movie(id: str):
     try:
-        movie = movies.find_one({"_id": ObjectId(id)})
+        user = users.find_one({"username": get_jwt_identity()})
+        if (user['roles'].count('SUPER_USER') == 0):
+            movie = movies.find_one({"_id": ObjectId(id), "user": get_jwt_identity()})
+        else:
+            movie = movies.find_one({"_id": ObjectId(id)})
+
         if not movie:
             return "Movie not found", 404
         movie.pop('_id')
@@ -19,10 +24,11 @@ def get_one_movie(id: str):
     except (TypeError, ValueError):
         return "Invalid movie ID format", 400
 
-
+@roles_required(UserRole.ADMIN.value)
+# @jwt_required()
 def add_movie():
     movie_data = request.get_json()  # Access JSON data from request
-    movie = Movie(**movie_data)  # Create Movie object
+    movie = Movie(**movie_data, user=get_jwt_identity())  # Create Movie object
     movie_mongo_dict = movie.to_mongo_dict()
     result = movies.insert_one(movie_mongo_dict)
     new_movie_id = result.inserted_id  # Get the inserted ID
@@ -57,7 +63,9 @@ def get_movies():
 
     # Extract and exclude pagination parameters from filters
     filters = {key: value for key, value in request.args.items() if key not in ("page", "limit", "sort")}
-
+    user = users.find_one({"username": get_jwt_identity()})
+    if (user['roles'].count('SUPER_USER') == 0):
+        filters["user"] = get_jwt_identity()
 
     # Calculate skip and offset based on pagination
     skip = (page - 1) * limit
@@ -67,14 +75,13 @@ def get_movies():
     sort_field = sort_field.strip("-")  # Remove any sort prefix
 
     # Count total movies (without applying filters yet)
-    total_movies = movies.count_documents({})
+    total_movies = movies.count_documents(filters)
     
     # Apply filters, excluding pagination parameters
     movies_cursor = movies.find(filters, skip=skip, limit=limit).sort([(sort_field, sort_direction)])
 
     # Convert cursor to list of dictionaries
     movies_list = [{'id': str(movie.pop('_id')), **movie} for movie in movies_cursor]
-    print(movies_list)
 
     # Calculate total pages and ensure valid page number
     total_pages = (total_movies + limit - 1) // limit
@@ -86,6 +93,7 @@ def get_movies():
         "total_pages": total_pages,
         "current_page": page,
         "per_page": limit,
+        "total_count": total_movies
     }
     return jsonify(response), 200
 
