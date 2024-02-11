@@ -2,6 +2,7 @@ from bson import ObjectId
 from flask import Blueprint, jsonify, request
 from .models import Movie
 from app import movies
+from flask_jwt_extended import jwt_required
 
 
 def home():
@@ -30,6 +31,7 @@ def add_movie():
     # Return the inserted movie data as JSON
     return jsonify({"id": str(new_movie_id), **movie_data}), 201
 
+@jwt_required()
 def get_movies():
     """Retrieves all movies with pagination and limit options.
 
@@ -37,6 +39,8 @@ def get_movies():
         - `page`: The page number (starting from 1).
         - `limit`: The number of movies per page (default: 10).
         - `filters`: Additional filtering criteria (optional).
+        - `sort`: Sort field (e.g., "title", "-year").
+
 
     Returns:
         JSON response containing:
@@ -49,19 +53,24 @@ def get_movies():
     # Get query parameters
     page = int(request.args.get("page", 1))
     limit = int(request.args.get("limit", 10))
-    
+    sort_field = request.args.get("sort", "title")  # Default to title ascending
+
     # Extract and exclude pagination parameters from filters
-    filters = {key: value for key, value in request.args.items() if key not in ("page", "limit")}
-    
+    filters = {key: value for key, value in request.args.items() if key not in ("page", "limit", "sort")}
+
 
     # Calculate skip and offset based on pagination
     skip = (page - 1) * limit
     
+    # Sort order (ascending or descending based on prefix)
+    sort_direction = 1 if sort_field.startswith("-") else -1
+    sort_field = sort_field.strip("-")  # Remove any sort prefix
+
     # Count total movies (without applying filters yet)
     total_movies = movies.count_documents({})
     
     # Apply filters, excluding pagination parameters
-    movies_cursor = movies.find(filters, skip=skip, limit=limit)
+    movies_cursor = movies.find(filters, skip=skip, limit=limit).sort([(sort_field, sort_direction)])
 
     # Convert cursor to list of dictionaries
     movies_list = [{'id': str(movie.pop('_id')), **movie} for movie in movies_cursor]

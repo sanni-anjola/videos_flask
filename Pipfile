@@ -6,6 +6,8 @@ name = "pypi"
 [packages]
 flask = "*"
 pymongo = "*"
+flask-jwt-extended = "*"
+passlib = {extras = ["bcrypt"], version = "*"}
 
 [dev-packages]
 
